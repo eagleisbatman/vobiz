@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "vobiz-voice": {
+      "command": "node",
+      "args": ["mcp-server/dist/index.js"],
+      "env": {
+        "VOBIZ_AUTH_ID": "",
+        "VOBIZ_AUTH_TOKEN": ""
+      }
+    }
+  }
+}
