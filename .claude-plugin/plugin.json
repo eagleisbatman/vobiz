@@ -1,0 +1,32 @@
+{
+  "name": "vobiz",
+  "version": "0.1.0",
+  "description": "Vobiz voice/telephony tools — MCP server for calls, audio, streams, recordings + provisioning skills for trunks, credentials, endpoints",
+  "author": {
+    "name": "Gautam Mandewalker",
+    "email": "eagleisbatman@gmail.com"
+  },
+  "repository": "https://github.com/eagleisbatman/vobiz",
+  "license": "MIT",
+  "keywords": [
+    "vobiz",
+    "voice",
+    "telephony",
+    "sip",
+    "mcp",
+    "ai-agent",
+    "calls",
+    "audio-streaming"
+  ],
+  "commands": "./commands",
+  "mcpServers": {
+    "vobiz-voice": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/bundle.cjs"],
+      "env": {
+        "VOBIZ_AUTH_ID": "${VOBIZ_AUTH_ID}",
+        "VOBIZ_AUTH_TOKEN": "${VOBIZ_AUTH_TOKEN}"
+      }
+    }
+  }
+}

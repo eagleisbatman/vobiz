@@ -1,5 +1,8 @@
 node_modules/
-dist/
 *.tsbuildinfo
 .env
 .remember/
+
+# Track bundle.cjs (needed for plugin distribution), ignore the rest of dist/
+mcp-server/dist/*
+!mcp-server/dist/bundle.cjs

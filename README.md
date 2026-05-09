@@ -1,22 +1,24 @@
-# Vobiz MCP Server & Claude Code Skills
+# Vobiz — Claude Code Plugin
 
-MCP server and Claude Code skills for the [Vobiz](https://www.vobiz.ai/) voice/telephony platform. Use these tools to manage calls, audio streams, recordings, and phone numbers from any AI agent or coding assistant.
+Claude Code plugin for the [Vobiz](https://www.vobiz.ai/) voice/telephony platform. Includes an MCP server (31 tools) for managing calls, audio, streams, and recordings, plus provisioning skills for setting up trunks, credentials, and endpoints.
 
-## Quick Start
+## Install
 
-### Prerequisites
-
-1. A [Vobiz](https://www.vobiz.ai/) account with API credentials
-2. Node.js >= 20
-
-### Set your credentials
+### As a Claude Code plugin (recommended)
 
 ```bash
-export VOBIZ_AUTH_ID="your-auth-id"
-export VOBIZ_AUTH_TOKEN="your-auth-token"
+git clone https://github.com/eagleisbatman/vobiz.git ~/.claude/plugins/vobiz
 ```
 
-### Use with Claude Code
+Then in Claude Code:
+
+```
+/plugin enable vobiz
+```
+
+This gives you all 31 MCP tools + 7 slash commands automatically.
+
+### As a standalone MCP server
 
 Add to your project's `.mcp.json`:
 
@@ -24,26 +26,29 @@ Add to your project's `.mcp.json`:
 {
   "mcpServers": {
     "vobiz-voice": {
-      "command": "npx",
-      "args": ["-y", "vobiz-mcp"]
+      "command": "node",
+      "args": ["/path/to/vobiz/mcp-server/dist/bundle.cjs"]
     }
   }
 }
 ```
 
-Or register globally (works across all projects):
+Or register globally:
 
 ```bash
-claude mcp add vobiz-voice -- npx -y vobiz-mcp
+claude mcp add vobiz-voice -- node /path/to/vobiz/mcp-server/dist/bundle.cjs
 ```
 
-### Use with any MCP client
+### Authentication
+
+Set these environment variables before launching Claude Code:
 
 ```bash
-npx vobiz-mcp
+export VOBIZ_AUTH_ID="your-auth-id"
+export VOBIZ_AUTH_TOKEN="your-auth-token"
 ```
 
-The server communicates over stdio using the [Model Context Protocol](https://modelcontextprotocol.io/).
+Get credentials from your [Vobiz dashboard](https://www.vobiz.ai/).
 
 ## MCP Tools (31)
 
@@ -106,9 +111,7 @@ The server communicates over stdio using the [Model Context Protocol](https://mo
 | `vobiz_voice_purchase_number` | Purchase a number |
 | `vobiz_voice_release_number` | Release a number |
 
-## Claude Code Skills
-
-Clone this repo to get provisioning skills as slash commands in Claude Code:
+## Slash Commands
 
 | Command | Description |
 |---------|-------------|
@@ -123,13 +126,13 @@ Clone this repo to get provisioning skills as slash commands in Claude Code:
 ## Project Structure
 
 ```
-mcp-server/          # MCP server (npm package: vobiz-mcp)
-  src/
-    index.ts         # Entry point
-    client.ts        # Vobiz API HTTP client
-    tools/           # Tool modules (calls, audio, streams, etc.)
-.claude/commands/    # Claude Code skills for provisioning
-raw/                 # Source API documentation (reference only)
+.claude-plugin/
+  plugin.json        # Plugin manifest
+commands/            # Slash commands (provisioning skills)
+mcp-server/
+  src/               # TypeScript source
+  dist/bundle.cjs    # Bundled server (zero dependencies)
+raw/                 # Source API documentation (reference)
 ```
 
 ## Development
@@ -137,8 +140,8 @@ raw/                 # Source API documentation (reference only)
 ```bash
 cd mcp-server
 npm install
-npm run build
-npm start
+npm run build        # TypeScript compile + esbuild bundle
+npm start            # Run the bundled server
 ```
 
 ## License
