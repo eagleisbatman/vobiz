@@ -1,4 +1,5 @@
 const BASE_URL = "https://api.vobiz.ai/api/v1";
+const MEDIA_URL = "https://media.vobiz.ai/v1";
 
 /**
  * Validate and encode a path segment to prevent path traversal.
@@ -94,6 +95,11 @@ export class VobizClient {
     const body = await res.text();
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${sanitizeErrorBody(body)}`);
     return body ? parseJson(body, "POST", path) : { status: res.status };
+  }
+
+  recordingUrl(recordingId: string): string {
+    const safeId = safePathSegment(recordingId, "recording_id");
+    return `${MEDIA_URL}/Account/${this.authId}/Recording/${safeId}.wav`;
   }
 
   async delete(path: string): Promise<unknown> {

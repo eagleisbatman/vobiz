@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { VobizClient } from "../client.js";
-import { uuidParam } from "./validation.js";
+import { uuidParam, buildQuery } from "./validation.js";
 
 /** Validate WebSocket URL scheme (wss:// or ws://) */
 const wsUrlSchema = z.string().refine(
@@ -74,10 +74,7 @@ export function registerStreamTools(server: McpServer, client: VobizClient) {
     },
     async ({ call_uuid, limit, offset }) => {
       const safeUuid = client.safePath(call_uuid, "call_uuid");
-      const query: Record<string, string> = {};
-      if (limit !== undefined) query.limit = String(limit);
-      if (offset !== undefined) query.offset = String(offset);
-      const result = await client.get(`/Account/${id}/Call/${safeUuid}/Stream/`, query);
+      const result = await client.get(`/Account/${id}/Call/${safeUuid}/Stream/`, buildQuery({ limit, offset }));
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );

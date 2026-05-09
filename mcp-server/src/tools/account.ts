@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { VobizClient } from "../client.js";
+import { buildQuery } from "./validation.js";
 
 /** Fields to strip from /auth/me responses to avoid leaking secrets. */
 const REDACTED_FIELDS = ["auth_secret", "api_secret", "secret_key", "auth_token", "password", "secret", "token"];
@@ -54,11 +55,7 @@ export function registerAccountTools(server: McpServer, client: VobizClient) {
       },
     },
     async (args) => {
-      const query: Record<string, string> = {};
-      if (args.page !== undefined) query.page = String(args.page);
-      if (args.per_page !== undefined) query.per_page = String(args.per_page);
-      if (args.include_subaccounts !== undefined) query.include_subaccounts = String(args.include_subaccounts);
-      const result = await client.get(`/account/${id}/numbers`, query);
+      const result = await client.get(`/account/${id}/numbers`, buildQuery(args));
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -76,11 +73,7 @@ export function registerAccountTools(server: McpServer, client: VobizClient) {
       },
     },
     async (args) => {
-      const query: Record<string, string> = {};
-      if (args.country) query.country = args.country;
-      if (args.page !== undefined) query.page = String(args.page);
-      if (args.per_page !== undefined) query.per_page = String(args.per_page);
-      const result = await client.get(`/account/${id}/inventory/numbers`, query);
+      const result = await client.get(`/account/${id}/inventory/numbers`, buildQuery(args));
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );

@@ -21100,6 +21100,7 @@ var StdioServerTransport = class {
 
 // src/client.ts
 var BASE_URL = "https://api.vobiz.ai/api/v1";
+var MEDIA_URL = "https://media.vobiz.ai/v1";
 function safePathSegment(value, label) {
   if (value.includes("/") || value.includes("\\") || value.includes("..") || value.includes("\0")) {
     throw new Error(`Invalid ${label}: must not contain path separators or traversal sequences`);
@@ -21173,6 +21174,10 @@ var VobizClient = class {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${sanitizeErrorBody(body)}`);
     return body ? parseJson(body, "POST", path) : { status: res.status };
   }
+  recordingUrl(recordingId) {
+    const safeId = safePathSegment(recordingId, "recording_id");
+    return `${MEDIA_URL}/Account/${this.authId}/Recording/${safeId}.wav`;
+  }
   async delete(path) {
     const res = await fetch(`${BASE_URL}${path}`, {
       method: "DELETE",
@@ -21189,6 +21194,23 @@ var VobizClient = class {
 var uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var phonePattern = /^\+?[1-9]\d{1,14}$/;
 var uuidParam = (label) => external_exports.string().regex(uuidPattern, `${label} must be a valid UUID`);
+var cdrFilterSchema = {
+  from_number: external_exports.string().optional().describe("Filter by originating phone number"),
+  to_number: external_exports.string().optional().describe("Filter by destination phone number"),
+  start_date: external_exports.string().optional().describe("Start date filter (YYYY-MM-DD)"),
+  end_date: external_exports.string().optional().describe("End date filter (YYYY-MM-DD)"),
+  call_direction: external_exports.enum(["inbound", "outbound"]).optional().describe("Filter by direction"),
+  min_duration: external_exports.number().int().min(0).optional().describe("Minimum call duration in seconds"),
+  page: external_exports.number().int().min(1).optional().describe("Page number (default: 1)"),
+  per_page: external_exports.number().int().min(1).max(100).optional().describe("Items per page (default: 20)")
+};
+function buildQuery(args) {
+  const query = {};
+  for (const [k, v] of Object.entries(args)) {
+    if (v !== void 0) query[k] = String(v);
+  }
+  return query;
+}
 
 // src/tools/calls.ts
 function registerCallTools(server2, client2) {
@@ -21474,10 +21496,7 @@ function registerStreamTools(server2, client2) {
     },
     async ({ call_uuid, limit, offset }) => {
       const safeUuid = client2.safePath(call_uuid, "call_uuid");
-      const query = {};
-      if (limit !== void 0) query.limit = String(limit);
-      if (offset !== void 0) query.offset = String(offset);
-      const result = await client2.get(`/Account/${id}/Call/${safeUuid}/Stream/`, query);
+      const result = await client2.get(`/Account/${id}/Call/${safeUuid}/Stream/`, buildQuery({ limit, offset }));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21530,13 +21549,8 @@ function registerRecordingTools(server2, client2) {
         recording_type: external_exports.enum(["trunk", "extension"]).optional().describe("Filter by recording type")
       }
     },
-    async ({ limit, offset, call_uuid, recording_type }) => {
-      const query = {};
-      if (limit !== void 0) query.limit = String(limit);
-      if (offset !== void 0) query.offset = String(offset);
-      if (call_uuid) query.call_uuid = call_uuid;
-      if (recording_type) query.recording_type = recording_type;
-      const result = await client2.get(`/Account/${id}/Recording/`, query);
+    async (args) => {
+      const result = await client2.get(`/Account/${id}/Recording/`, buildQuery(args));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21553,6 +21567,20 @@ function registerRecordingTools(server2, client2) {
       const safeId = client2.safePath(recording_id, "recording_id");
       const result = await client2.get(`/Account/${id}/Recording/${safeId}/`);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+  server2.registerTool(
+    "vobiz_voice_get_recording_url",
+    {
+      title: "Get Recording Download URL",
+      description: "Get the direct download URL for a recording's WAV file. Use this URL to download or stream the audio.",
+      inputSchema: {
+        recording_id: uuidParam("recording_id").describe("UUID of the recording")
+      }
+    },
+    async ({ recording_id }) => {
+      const url = client2.recordingUrl(recording_id);
+      return { content: [{ type: "text", text: JSON.stringify({ download_url: url }, null, 2) }] };
     }
   );
   server2.registerTool(
@@ -21581,23 +21609,10 @@ function registerCdrTools(server2, client2) {
     {
       title: "List CDRs",
       description: "List Call Detail Records with optional filters. Returns call metadata including duration, cost, status, and hangup cause.",
-      inputSchema: {
-        from_number: external_exports.string().optional().describe("Filter by originating phone number"),
-        to_number: external_exports.string().optional().describe("Filter by destination phone number"),
-        start_date: external_exports.string().optional().describe("Start date filter (YYYY-MM-DD)"),
-        end_date: external_exports.string().optional().describe("End date filter (YYYY-MM-DD)"),
-        call_direction: external_exports.enum(["inbound", "outbound"]).optional().describe("Filter by direction"),
-        min_duration: external_exports.number().int().min(0).optional().describe("Minimum call duration in seconds"),
-        page: external_exports.number().int().min(1).optional().describe("Page number (default: 1)"),
-        per_page: external_exports.number().int().min(1).max(100).optional().describe("Items per page (default: 20)")
-      }
+      inputSchema: cdrFilterSchema
     },
     async (args) => {
-      const query = {};
-      for (const [k, v] of Object.entries(args)) {
-        if (v !== void 0) query[k] = String(v);
-      }
-      const result = await client2.get(`/account/${id}/cdr`, query);
+      const result = await client2.get(`/account/${id}/cdr`, buildQuery(args));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21621,23 +21636,10 @@ function registerCdrTools(server2, client2) {
     {
       title: "Search CDRs",
       description: "Search Call Detail Records with filters. Similar to list but returns a filter_summary in the response.",
-      inputSchema: {
-        from_number: external_exports.string().optional().describe("Originating phone number"),
-        to_number: external_exports.string().optional().describe("Destination phone number"),
-        start_date: external_exports.string().optional().describe("Start date (YYYY-MM-DD)"),
-        end_date: external_exports.string().optional().describe("End date (YYYY-MM-DD)"),
-        call_direction: external_exports.enum(["inbound", "outbound"]).optional(),
-        min_duration: external_exports.number().int().min(0).optional(),
-        page: external_exports.number().int().min(1).optional(),
-        per_page: external_exports.number().int().min(1).max(100).optional()
-      }
+      inputSchema: cdrFilterSchema
     },
     async (args) => {
-      const query = {};
-      for (const [k, v] of Object.entries(args)) {
-        if (v !== void 0) query[k] = String(v);
-      }
-      const result = await client2.get(`/account/${id}/cdr/search`, query);
+      const result = await client2.get(`/account/${id}/cdr/search`, buildQuery(args));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21662,23 +21664,10 @@ function registerCdrTools(server2, client2) {
     {
       title: "Export CDRs as CSV",
       description: "Export Call Detail Records as CSV text. Accepts the same filters as list_cdrs. Returns raw CSV content.",
-      inputSchema: {
-        from_number: external_exports.string().optional().describe("Filter by originating phone number"),
-        to_number: external_exports.string().optional().describe("Filter by destination phone number"),
-        start_date: external_exports.string().optional().describe("Start date filter (YYYY-MM-DD)"),
-        end_date: external_exports.string().optional().describe("End date filter (YYYY-MM-DD)"),
-        call_direction: external_exports.enum(["inbound", "outbound"]).optional().describe("Filter by direction"),
-        min_duration: external_exports.number().int().min(0).optional().describe("Minimum call duration in seconds"),
-        page: external_exports.number().int().min(1).optional().describe("Page number (default: 1)"),
-        per_page: external_exports.number().int().min(1).max(100).optional().describe("Items per page (default: 20)")
-      }
+      inputSchema: cdrFilterSchema
     },
     async (args) => {
-      const query = {};
-      for (const [k, v] of Object.entries(args)) {
-        if (v !== void 0) query[k] = String(v);
-      }
-      const result = await client2.get(`/account/${id}/cdr/export`, query);
+      const result = await client2.get(`/account/${id}/cdr/export`, buildQuery(args));
       return { content: [{ type: "text", text: typeof result === "string" ? result : JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21728,11 +21717,7 @@ function registerAccountTools(server2, client2) {
       }
     },
     async (args) => {
-      const query = {};
-      if (args.page !== void 0) query.page = String(args.page);
-      if (args.per_page !== void 0) query.per_page = String(args.per_page);
-      if (args.include_subaccounts !== void 0) query.include_subaccounts = String(args.include_subaccounts);
-      const result = await client2.get(`/account/${id}/numbers`, query);
+      const result = await client2.get(`/account/${id}/numbers`, buildQuery(args));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21748,11 +21733,7 @@ function registerAccountTools(server2, client2) {
       }
     },
     async (args) => {
-      const query = {};
-      if (args.country) query.country = args.country;
-      if (args.page !== void 0) query.page = String(args.page);
-      if (args.per_page !== void 0) query.per_page = String(args.per_page);
-      const result = await client2.get(`/account/${id}/inventory/numbers`, query);
+      const result = await client2.get(`/account/${id}/inventory/numbers`, buildQuery(args));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

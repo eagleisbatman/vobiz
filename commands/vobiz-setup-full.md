@@ -10,6 +10,7 @@ Walk the user through the full provisioning workflow. Execute each step via `cur
 
 - **Base URL:** `https://api.vobiz.ai/api/v1`
 - **Auth headers:** `X-Auth-ID: $VOBIZ_AUTH_ID` and `X-Auth-Token: $VOBIZ_AUTH_TOKEN`
+- **Path casing:** Most paths use lowercase `/account/{auth_id}/...`, but Applications and Endpoints use `/Account/{authID}/...` per Vobiz API conventions.
 
 ### Provisioning Steps
 

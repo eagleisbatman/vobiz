@@ -10,7 +10,7 @@ Help the user build Voice XML responses for their Vobiz application webhooks. Al
 
 1. Call event triggers webhook to your answer_url
 2. Vobiz POSTs: `CallUUID`, `From`, `To`, `Direction`, `CallStatus`
-3. Your server returns XML within 1-2 seconds
+3. Your server returns XML within 10 seconds (1-2 seconds recommended for good caller experience)
 4. Vobiz executes elements sequentially
 5. Elements with `action` URLs trigger new webhooks (cycle repeats)
 
@@ -22,7 +22,7 @@ XML is stateless — track conversations via `CallUUID`.
 ```xml
 <Speak voice="WOMAN|MAN" language="en-US" loop="1">Text here</Speak>
 ```
-Languages: en-US, en-GB, en-AU, es-ES, es-US, fr-FR, fr-CA, pt-PT, pt-BR, da-DK, nl-NL, de-DE, it-IT, pl-PL, ru-RU, sv-SE, zh-CN, ja-JP, ar-SA, hi-IN
+Languages (Voice XML): en-US, en-GB, en-AU, es-ES, es-US, fr-FR, fr-CA, pt-PT, pt-BR, da-DK, nl-NL, de-DE, it-IT, pl-PL, ru-RU, sv-SE. Additional languages (zh-CN, ja-JP, ar-SA) are available via the REST TTS API but may not all work in Voice XML `<Speak>`.
 
 **Play** — Audio file playback
 ```xml

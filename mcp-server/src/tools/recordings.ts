@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { VobizClient } from "../client.js";
-import { uuidParam, uuidPattern } from "./validation.js";
+import { uuidParam, uuidPattern, buildQuery } from "./validation.js";
 
 export function registerRecordingTools(server: McpServer, client: VobizClient) {
   const id = client.accountId;
@@ -18,13 +18,8 @@ export function registerRecordingTools(server: McpServer, client: VobizClient) {
         recording_type: z.enum(["trunk", "extension"]).optional().describe("Filter by recording type"),
       },
     },
-    async ({ limit, offset, call_uuid, recording_type }) => {
-      const query: Record<string, string> = {};
-      if (limit !== undefined) query.limit = String(limit);
-      if (offset !== undefined) query.offset = String(offset);
-      if (call_uuid) query.call_uuid = call_uuid;
-      if (recording_type) query.recording_type = recording_type;
-      const result = await client.get(`/Account/${id}/Recording/`, query);
+    async (args) => {
+      const result = await client.get(`/Account/${id}/Recording/`, buildQuery(args));
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -43,6 +38,22 @@ export function registerRecordingTools(server: McpServer, client: VobizClient) {
       const safeId = client.safePath(recording_id, "recording_id");
       const result = await client.get(`/Account/${id}/Recording/${safeId}/`);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.registerTool(
+    "vobiz_voice_get_recording_url",
+    {
+      title: "Get Recording Download URL",
+      description:
+        "Get the direct download URL for a recording's WAV file. Use this URL to download or stream the audio.",
+      inputSchema: {
+        recording_id: uuidParam("recording_id").describe("UUID of the recording"),
+      },
+    },
+    async ({ recording_id }) => {
+      const url = client.recordingUrl(recording_id);
+      return { content: [{ type: "text" as const, text: JSON.stringify({ download_url: url }, null, 2) }] };
     }
   );
 

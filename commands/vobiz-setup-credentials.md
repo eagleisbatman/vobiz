@@ -43,7 +43,7 @@ Permanently removes. Disconnects active calls using this credential.
 2. Create the credential
 3. Store the credential_id — it's needed to associate with a trunk
 4. Remind user: password is write-only and never returned in API responses — save it securely
-5. If a trunk_id is provided, update the trunk to set `credential_uuid` to the new credential ID
+5. If a trunk_id is provided, update the trunk: `PUT /account/{auth_id}/trunks/{trunk_id}` with `{ "credential_uuid": "<credential_id>" }`. Credentials are globally scoped but linked to trunks via this association — the credential's `trunk_id` field reflects which trunk it's attached to.
 
 ### Security Notes
 

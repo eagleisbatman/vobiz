@@ -23,7 +23,7 @@ Optional: `trunk_status` (enabled/disabled), `secure` (boolean, TLS/SRTP), `trun
 
 **List/Get/Update/Delete:**
 - GET `/account/{auth_id}/trunks/{trunk_id}`
-- PUT `/account/{auth_id}/trunks/{trunk_id}` — updatable: name, description, enabled
+- PUT `/account/{auth_id}/trunks/{trunk_id}` — updatable: name, description, enabled, credential_uuid, primary_uri_uuid, fallback_uri_uuid
 - DELETE `/account/{auth_id}/trunks/{trunk_id}` — permanently removes trunk + credentials + URIs
 
 ### Workflow

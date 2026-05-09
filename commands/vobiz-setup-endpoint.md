@@ -42,6 +42,14 @@ DELETE /Account/{authID}/Endpoint/{endpointID}/
 ```
 Permanent. All registered devices disconnect immediately.
 
+### Workflow
+
+1. Ask user for a unique username and a strong password (min 8 chars, 12+ recommended)
+2. Ask if this endpoint should be linked to a specific application (pass app ID)
+3. Create the endpoint
+4. Display the returned `endpoint_id` and `sip_uri` (format: `sip:username@sip.vobiz.ai`)
+5. Suggest testing registration with a SIP client, WebRTC browser app, or softphone
+
 ### WebRTC Config
 
 - WebRTC endpoint: `wss://sip.vobiz.ai:7443`
