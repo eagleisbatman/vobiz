@@ -21100,6 +21100,26 @@ var StdioServerTransport = class {
 
 // src/client.ts
 var BASE_URL = "https://api.vobiz.ai/api/v1";
+function safePathSegment(value, label) {
+  if (value.includes("/") || value.includes("\\") || value.includes("..") || value.includes("\0")) {
+    throw new Error(`Invalid ${label}: must not contain path separators or traversal sequences`);
+  }
+  return encodeURIComponent(value);
+}
+function sanitizeErrorBody(body) {
+  const maxLen = 200;
+  const truncated = body.length > maxLen ? body.slice(0, maxLen) + "..." : body;
+  return truncated.replace(/auth_secret[^,}]*/gi, "auth_secret:[REDACTED]");
+}
+function parseJson(body, method, path) {
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error(
+      `${method} ${path}: expected JSON response but got non-JSON body (${body.length} bytes)`
+    );
+  }
+}
 var VobizClient = class {
   authId;
   authToken;
@@ -21116,6 +21136,10 @@ var VobizClient = class {
   }
   get accountId() {
     return this.authId;
+  }
+  /** Encode a user-provided value for safe use in a URL path segment. */
+  safePath(value, label) {
+    return safePathSegment(value, label);
   }
   headers(json = false) {
     const h = {
@@ -21135,8 +21159,8 @@ var VobizClient = class {
     const res = await fetch(url, { headers: this.headers() });
     if (res.status === 204) return { status: 204 };
     const body = await res.text();
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${body}`);
-    return JSON.parse(body);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${sanitizeErrorBody(body)}`);
+    return parseJson(body, "GET", path);
   }
   async post(path, data) {
     const res = await fetch(`${BASE_URL}${path}`, {
@@ -21146,19 +21170,8 @@ var VobizClient = class {
     });
     if (res.status === 204) return { status: 204 };
     const body = await res.text();
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${body}`);
-    return body ? JSON.parse(body) : { status: res.status };
-  }
-  async put(path, data) {
-    const res = await fetch(`${BASE_URL}${path}`, {
-      method: "PUT",
-      headers: this.headers(true),
-      body: data ? JSON.stringify(data) : void 0
-    });
-    if (res.status === 204) return { status: 204 };
-    const body = await res.text();
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${body}`);
-    return body ? JSON.parse(body) : { status: res.status };
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${sanitizeErrorBody(body)}`);
+    return body ? parseJson(body, "POST", path) : { status: res.status };
   }
   async delete(path) {
     const res = await fetch(`${BASE_URL}${path}`, {
@@ -21167,10 +21180,15 @@ var VobizClient = class {
     });
     if (res.status === 204) return { message: "deleted" };
     const body = await res.text();
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${body}`);
-    return body ? JSON.parse(body) : { status: res.status };
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${sanitizeErrorBody(body)}`);
+    return body ? parseJson(body, "DELETE", path) : { status: res.status };
   }
 };
+
+// src/tools/validation.ts
+var uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+var phonePattern = /^\+?[1-9]\d{1,14}$/;
+var uuidParam = (label) => external_exports.string().regex(uuidPattern, `${label} must be a valid UUID`);
 
 // src/tools/calls.ts
 function registerCallTools(server2, client2) {
@@ -21181,20 +21199,29 @@ function registerCallTools(server2, client2) {
       title: "Make a Call",
       description: "Initiate an outbound call. Returns a request_uuid for tracking. The answer_url must return valid Voice XML to control the call flow.",
       inputSchema: {
-        from: external_exports.string().describe("Caller ID in E.164 format (e.g. 914155551234)"),
+        from: external_exports.string().regex(phonePattern, "Must be E.164 format").describe("Caller ID in E.164 format (e.g. 914155551234)"),
         to: external_exports.string().describe("Destination number(s) in E.164 format. Use < separator for multiple (max 1000)"),
         answer_url: external_exports.string().url().describe("URL invoked when call is answered; must return valid Voice XML"),
         answer_method: external_exports.enum(["GET", "POST"]).optional().describe("HTTP method for answer_url"),
         hangup_url: external_exports.string().url().optional().describe("URL called on hangup"),
         hangup_method: external_exports.enum(["GET", "POST"]).optional(),
         fallback_url: external_exports.string().url().optional().describe("Backup URL if answer_url fails"),
+        fallback_method: external_exports.enum(["GET", "POST"]).optional().describe("HTTP method for fallback_url"),
         ring_url: external_exports.string().url().optional().describe("URL called on ring"),
+        ring_method: external_exports.enum(["GET", "POST"]).optional().describe("HTTP method for ring_url"),
         caller_name: external_exports.string().optional().describe("Caller ID name"),
         time_limit: external_exports.number().int().positive().optional().describe("Max call duration in seconds"),
+        hangup_on_ring: external_exports.number().int().positive().optional().describe("Hang up after N rings"),
         machine_detection: external_exports.enum(["true", "hangup"]).optional().describe("AMD: 'true' to continue, 'hangup' to disconnect on machine"),
         machine_detection_time: external_exports.number().int().min(2e3).max(1e4).optional().describe("AMD analysis duration in ms (default 5000)"),
         machine_detection_url: external_exports.string().url().optional().describe("Callback URL for async AMD results"),
-        send_digits: external_exports.string().optional().describe("DTMF digits to send on answer")
+        machine_detection_method: external_exports.enum(["GET", "POST"]).optional().describe("HTTP method for machine_detection_url (default: POST)"),
+        machine_detection_maximum_speech_length: external_exports.number().int().min(1e3).max(6e3).optional().describe("Max speech for AMD in ms (default 5000)"),
+        machine_detection_initial_silence: external_exports.number().int().min(2e3).max(1e4).optional().describe("Max post-answer silence for AMD in ms (default 4500)"),
+        machine_detection_maximum_words: external_exports.number().int().min(2).max(10).optional().describe("Max sentences for AMD (default 3)"),
+        machine_detection_initial_greeting: external_exports.number().int().min(1e3).max(5e3).optional().describe("Max greeting for AMD in ms (default 1500)"),
+        send_digits: external_exports.string().optional().describe("DTMF digits to send on answer"),
+        send_on_preanswer: external_exports.boolean().optional().describe("Send digits during early media")
       }
     },
     async (args) => {
@@ -21208,7 +21235,7 @@ function registerCallTools(server2, client2) {
       title: "Transfer a Call",
       description: "Redirect an active call to a new Voice XML instruction URL. The call must be in-progress.",
       inputSchema: {
-        call_uuid: external_exports.string().describe("UUID of the active call to transfer"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the active call to transfer"),
         legs: external_exports.enum(["aleg", "bleg", "both"]).optional().describe("Which leg(s) to transfer (default: aleg)"),
         aleg_url: external_exports.string().url().optional().describe("New XML instruction URL for A leg"),
         aleg_method: external_exports.enum(["GET", "POST"]).optional(),
@@ -21217,7 +21244,8 @@ function registerCallTools(server2, client2) {
       }
     },
     async ({ call_uuid, ...body }) => {
-      const result = await client2.post(`/Account/${id}/Call/${call_uuid}/`, body);
+      const safeUuid = client2.safePath(call_uuid, "call_uuid");
+      const result = await client2.post(`/Account/${id}/Call/${safeUuid}/`, body);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21227,11 +21255,12 @@ function registerCallTools(server2, client2) {
       title: "Hang Up a Call",
       description: "Terminate an active call immediately. Triggers hangup_url callback. CDR will show hangup_source as 'API'.",
       inputSchema: {
-        call_uuid: external_exports.string().describe("UUID of the call to hang up")
+        call_uuid: uuidParam("call_uuid").describe("UUID of the call to hang up")
       }
     },
     async ({ call_uuid }) => {
-      const result = await client2.delete(`/Account/${id}/Call/${call_uuid}/`);
+      const safeUuid = client2.safePath(call_uuid, "call_uuid");
+      const result = await client2.delete(`/Account/${id}/Call/${safeUuid}/`);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21253,11 +21282,12 @@ function registerCallTools(server2, client2) {
       title: "Get Live Call Details",
       description: "Retrieve details of a specific active call including state, duration, direction, and numbers. Returns 404 if call is not active.",
       inputSchema: {
-        call_uuid: external_exports.string().describe("UUID of the live call")
+        call_uuid: uuidParam("call_uuid").describe("UUID of the live call")
       }
     },
     async ({ call_uuid }) => {
-      const result = await client2.get(`/account/${id}/call/${call_uuid}/`, { status: "live" });
+      const safeUuid = client2.safePath(call_uuid, "call_uuid");
+      const result = await client2.get(`/account/${id}/call/${safeUuid}/`, { status: "live" });
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21273,9 +21303,25 @@ function registerCallTools(server2, client2) {
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
+  server2.registerTool(
+    "vobiz_voice_get_queued_call",
+    {
+      title: "Get Queued Call Details",
+      description: "Retrieve details of a specific queued call including direction, from/to numbers, and request UUID. Returns 404 if call is not queued.",
+      inputSchema: {
+        call_uuid: uuidParam("call_uuid").describe("UUID of the queued call")
+      }
+    },
+    async ({ call_uuid }) => {
+      const safeUuid = client2.safePath(call_uuid, "call_uuid");
+      const result = await client2.get(`/account/${id}/call/${safeUuid}/`, { status: "queued" });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
 }
 
 // src/tools/audio.ts
+var dtmfPattern = /^[0-9*#wW]+$/;
 function registerAudioTools(server2, client2) {
   const id = client2.accountId;
   server2.registerTool(
@@ -21284,7 +21330,7 @@ function registerAudioTools(server2, client2) {
       title: "Play Audio on Call",
       description: "Play audio file(s) on an active call. Files must be accessible via HTTP/HTTPS. Multiple files play sequentially.",
       inputSchema: {
-        call_uuid: external_exports.string().describe("UUID of the active call"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the active call"),
         urls: external_exports.array(external_exports.string().url()).describe("Audio file URLs (MP3, WAV)"),
         length: external_exports.number().int().positive().optional().describe("Max playback duration in seconds"),
         legs: external_exports.enum(["aleg", "bleg", "both"]).optional().describe("Which leg(s) hear audio (default: aleg)"),
@@ -21293,7 +21339,8 @@ function registerAudioTools(server2, client2) {
       }
     },
     async ({ call_uuid, ...body }) => {
-      const result = await client2.post(`/Account/${id}/Call/${call_uuid}/Play/`, body);
+      const safeUuid = client2.safePath(call_uuid, "call_uuid");
+      const result = await client2.post(`/Account/${id}/Call/${safeUuid}/Play/`, body);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21303,11 +21350,12 @@ function registerAudioTools(server2, client2) {
       title: "Stop Audio Playback",
       description: "Stop any audio currently playing on a call.",
       inputSchema: {
-        call_uuid: external_exports.string().describe("UUID of the active call")
+        call_uuid: uuidParam("call_uuid").describe("UUID of the active call")
       }
     },
     async ({ call_uuid }) => {
-      const result = await client2.delete(`/Account/${id}/Call/${call_uuid}/Play/`);
+      const safeUuid = client2.safePath(call_uuid, "call_uuid");
+      const result = await client2.delete(`/Account/${id}/Call/${safeUuid}/Play/`);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21317,9 +21365,9 @@ function registerAudioTools(server2, client2) {
       title: "Speak Text (TTS)",
       description: "Convert text to speech and play it on an active call. Supports 29 languages.",
       inputSchema: {
-        call_uuid: external_exports.string().describe("UUID of the active call"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the active call"),
         text: external_exports.string().max(500).describe("Text to speak (max 500 chars recommended)"),
-        voice: external_exports.enum(["WOMAN", "MAN"]).optional().describe("Voice gender (default: WOMAN)"),
+        voice: external_exports.enum(["WOMAN", "MAN", "Polly"]).optional().describe("Voice: WOMAN, MAN, or Polly (default: WOMAN)"),
         language: external_exports.string().optional().describe("Language code, e.g. en-US, hi-IN, es-ES (default: en-US)"),
         legs: external_exports.enum(["aleg", "bleg", "both"]).optional().describe("Which leg(s) hear speech (default: aleg)"),
         loop: external_exports.boolean().optional().describe("Repeat speech"),
@@ -21327,7 +21375,8 @@ function registerAudioTools(server2, client2) {
       }
     },
     async ({ call_uuid, ...body }) => {
-      const result = await client2.post(`/Account/${id}/Call/${call_uuid}/Speak/`, body);
+      const safeUuid = client2.safePath(call_uuid, "call_uuid");
+      const result = await client2.post(`/Account/${id}/Call/${safeUuid}/Speak/`, body);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21337,11 +21386,12 @@ function registerAudioTools(server2, client2) {
       title: "Stop Text-to-Speech",
       description: "Stop any TTS currently playing on a call.",
       inputSchema: {
-        call_uuid: external_exports.string().describe("UUID of the active call")
+        call_uuid: uuidParam("call_uuid").describe("UUID of the active call")
       }
     },
     async ({ call_uuid }) => {
-      const result = await client2.delete(`/Account/${id}/Call/${call_uuid}/Speak/`);
+      const safeUuid = client2.safePath(call_uuid, "call_uuid");
+      const result = await client2.delete(`/Account/${id}/Call/${safeUuid}/Speak/`);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21351,19 +21401,24 @@ function registerAudioTools(server2, client2) {
       title: "Send DTMF Digits",
       description: "Send DTMF tones on an active call. Useful for navigating IVR menus. Call must be active.",
       inputSchema: {
-        call_uuid: external_exports.string().describe("UUID of the active call"),
-        digits: external_exports.string().describe("DTMF characters: 0-9, *, #"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the active call"),
+        digits: external_exports.string().regex(dtmfPattern, "Must contain only valid DTMF characters: 0-9, *, #, w").describe("DTMF characters: 0-9, *, #"),
         leg: external_exports.enum(["aleg", "bleg"]).optional().describe("Target leg (default: aleg)")
       }
     },
     async ({ call_uuid, ...body }) => {
-      const result = await client2.post(`/Account/${id}/Call/${call_uuid}/DTMF/`, body);
+      const safeUuid = client2.safePath(call_uuid, "call_uuid");
+      const result = await client2.post(`/Account/${id}/Call/${safeUuid}/DTMF/`, body);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
 }
 
 // src/tools/streams.ts
+var wsUrlSchema = external_exports.string().refine(
+  (val) => val.startsWith("wss://") || val.startsWith("ws://"),
+  { message: "Must be a WebSocket URL (wss:// or ws://)" }
+);
 function registerStreamTools(server2, client2) {
   const id = client2.accountId;
   server2.registerTool(
@@ -21372,8 +21427,8 @@ function registerStreamTools(server2, client2) {
       title: "Start Audio Stream",
       description: "Fork real-time audio from an active call to a WebSocket endpoint. Supports bidirectional streaming for AI voice agents. Billed per minute of audio forked.",
       inputSchema: {
-        call_uuid: external_exports.string().describe("UUID of the active call"),
-        service_url: external_exports.string().describe("WebSocket URL (wss:// or ws://) to receive audio"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the active call"),
+        service_url: wsUrlSchema.describe("WebSocket URL (wss:// or ws://) to receive audio"),
         audio_track: external_exports.enum(["inbound", "outbound", "both"]).optional().describe("Which audio track to stream (default: inbound)"),
         bidirectional: external_exports.boolean().optional().describe("Enable sending audio back to the call (default: false)"),
         content_type: external_exports.string().optional().describe("Codec: audio/x-l16;rate=8000, audio/x-l16;rate=16000, audio/x-mulaw;rate=8000"),
@@ -21384,7 +21439,8 @@ function registerStreamTools(server2, client2) {
       }
     },
     async ({ call_uuid, ...body }) => {
-      const result = await client2.post(`/Account/${id}/Call/${call_uuid}/Stream/`, body);
+      const safeUuid = client2.safePath(call_uuid, "call_uuid");
+      const result = await client2.post(`/Account/${id}/Call/${safeUuid}/Stream/`, body);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21394,12 +21450,14 @@ function registerStreamTools(server2, client2) {
       title: "Get Audio Stream",
       description: "Retrieve details of a specific audio stream on a call.",
       inputSchema: {
-        call_uuid: external_exports.string().describe("UUID of the call"),
-        stream_id: external_exports.string().describe("UUID of the audio stream")
+        call_uuid: uuidParam("call_uuid").describe("UUID of the call"),
+        stream_id: uuidParam("stream_id").describe("UUID of the audio stream")
       }
     },
     async ({ call_uuid, stream_id }) => {
-      const result = await client2.get(`/Account/${id}/Call/${call_uuid}/Stream/${stream_id}/`);
+      const safeCallUuid = client2.safePath(call_uuid, "call_uuid");
+      const safeStreamId = client2.safePath(stream_id, "stream_id");
+      const result = await client2.get(`/Account/${id}/Call/${safeCallUuid}/Stream/${safeStreamId}/`);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21409,16 +21467,17 @@ function registerStreamTools(server2, client2) {
       title: "List Audio Streams",
       description: "List all audio streams on a call.",
       inputSchema: {
-        call_uuid: external_exports.string().describe("UUID of the call"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the call"),
         limit: external_exports.number().int().min(1).max(100).optional().describe("Results per page (default: 20)"),
         offset: external_exports.number().int().min(0).optional().describe("Pagination offset")
       }
     },
     async ({ call_uuid, limit, offset }) => {
+      const safeUuid = client2.safePath(call_uuid, "call_uuid");
       const query = {};
       if (limit !== void 0) query.limit = String(limit);
       if (offset !== void 0) query.offset = String(offset);
-      const result = await client2.get(`/Account/${id}/Call/${call_uuid}/Stream/`, query);
+      const result = await client2.get(`/Account/${id}/Call/${safeUuid}/Stream/`, query);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21428,12 +21487,14 @@ function registerStreamTools(server2, client2) {
       title: "Stop Audio Stream",
       description: "Stop a specific audio stream without affecting others on the same call.",
       inputSchema: {
-        call_uuid: external_exports.string().describe("UUID of the call"),
-        stream_id: external_exports.string().describe("UUID of the stream to stop")
+        call_uuid: uuidParam("call_uuid").describe("UUID of the call"),
+        stream_id: uuidParam("stream_id").describe("UUID of the stream to stop")
       }
     },
     async ({ call_uuid, stream_id }) => {
-      const result = await client2.delete(`/Account/${id}/Call/${call_uuid}/Stream/${stream_id}/`);
+      const safeCallUuid = client2.safePath(call_uuid, "call_uuid");
+      const safeStreamId = client2.safePath(stream_id, "stream_id");
+      const result = await client2.delete(`/Account/${id}/Call/${safeCallUuid}/Stream/${safeStreamId}/`);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21443,11 +21504,12 @@ function registerStreamTools(server2, client2) {
       title: "Stop All Audio Streams",
       description: "Stop all active audio streams on a call. Idempotent \u2014 already-stopped streams are unaffected.",
       inputSchema: {
-        call_uuid: external_exports.string().describe("UUID of the call")
+        call_uuid: uuidParam("call_uuid").describe("UUID of the call")
       }
     },
     async ({ call_uuid }) => {
-      const result = await client2.delete(`/Account/${id}/Call/${call_uuid}/Stream/`);
+      const safeUuid = client2.safePath(call_uuid, "call_uuid");
+      const result = await client2.delete(`/Account/${id}/Call/${safeUuid}/Stream/`);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21464,7 +21526,7 @@ function registerRecordingTools(server2, client2) {
       inputSchema: {
         limit: external_exports.number().int().min(1).max(100).optional().describe("Max per page (default: 20)"),
         offset: external_exports.number().int().min(0).optional().describe("Pagination offset"),
-        call_uuid: external_exports.string().optional().describe("Filter by call UUID"),
+        call_uuid: external_exports.string().regex(uuidPattern, "Must be a valid UUID").optional().describe("Filter by call UUID"),
         recording_type: external_exports.enum(["trunk", "extension"]).optional().describe("Filter by recording type")
       }
     },
@@ -21484,11 +21546,12 @@ function registerRecordingTools(server2, client2) {
       title: "Get Recording",
       description: "Retrieve details of a specific recording including duration, format, and download URL.",
       inputSchema: {
-        recording_id: external_exports.string().describe("UUID of the recording")
+        recording_id: uuidParam("recording_id").describe("UUID of the recording")
       }
     },
     async ({ recording_id }) => {
-      const result = await client2.get(`/Account/${id}/Recording/${recording_id}/`);
+      const safeId = client2.safePath(recording_id, "recording_id");
+      const result = await client2.get(`/Account/${id}/Recording/${safeId}/`);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21498,17 +21561,19 @@ function registerRecordingTools(server2, client2) {
       title: "Delete Recording",
       description: "Permanently delete a recording. This is irreversible \u2014 the file and URL become inaccessible.",
       inputSchema: {
-        recording_id: external_exports.string().describe("UUID of the recording to delete")
+        recording_id: uuidParam("recording_id").describe("UUID of the recording to delete")
       }
     },
     async ({ recording_id }) => {
-      const result = await client2.delete(`/Account/${id}/Recording/${recording_id}/`);
+      const safeId = client2.safePath(recording_id, "recording_id");
+      const result = await client2.delete(`/Account/${id}/Recording/${safeId}/`);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
 }
 
 // src/tools/cdrs.ts
+var safeIdPattern = /^[a-zA-Z0-9_-]+$/;
 function registerCdrTools(server2, client2) {
   const id = client2.accountId;
   server2.registerTool(
@@ -21542,11 +21607,12 @@ function registerCdrTools(server2, client2) {
       title: "Get CDR",
       description: "Retrieve the Call Detail Record for a specific completed call.",
       inputSchema: {
-        call_id: external_exports.string().describe("Call ID from the CDR")
+        call_id: external_exports.string().regex(safeIdPattern, "Must be alphanumeric (letters, digits, hyphens, underscores)").describe("Call ID from the CDR")
       }
     },
     async ({ call_id }) => {
-      const result = await client2.get(`/account/${id}/cdr/${call_id}`);
+      const safeId = client2.safePath(call_id, "call_id");
+      const result = await client2.get(`/account/${id}/cdr/${safeId}`);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21591,9 +21657,50 @@ function registerCdrTools(server2, client2) {
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
+  server2.registerTool(
+    "vobiz_voice_export_cdrs",
+    {
+      title: "Export CDRs as CSV",
+      description: "Export Call Detail Records as CSV text. Accepts the same filters as list_cdrs. Returns raw CSV content.",
+      inputSchema: {
+        from_number: external_exports.string().optional().describe("Filter by originating phone number"),
+        to_number: external_exports.string().optional().describe("Filter by destination phone number"),
+        start_date: external_exports.string().optional().describe("Start date filter (YYYY-MM-DD)"),
+        end_date: external_exports.string().optional().describe("End date filter (YYYY-MM-DD)"),
+        call_direction: external_exports.enum(["inbound", "outbound"]).optional().describe("Filter by direction"),
+        min_duration: external_exports.number().int().min(0).optional().describe("Minimum call duration in seconds"),
+        page: external_exports.number().int().min(1).optional().describe("Page number (default: 1)"),
+        per_page: external_exports.number().int().min(1).max(100).optional().describe("Items per page (default: 20)")
+      }
+    },
+    async (args) => {
+      const query = {};
+      for (const [k, v] of Object.entries(args)) {
+        if (v !== void 0) query[k] = String(v);
+      }
+      const result = await client2.get(`/account/${id}/cdr/export`, query);
+      return { content: [{ type: "text", text: typeof result === "string" ? result : JSON.stringify(result, null, 2) }] };
+    }
+  );
 }
 
 // src/tools/account.ts
+var REDACTED_FIELDS = ["auth_secret", "api_secret", "secret_key", "auth_token", "password", "secret", "token"];
+function redactSensitiveFields(data) {
+  if (data === null || typeof data !== "object") return data;
+  if (Array.isArray(data)) return data.map(redactSensitiveFields);
+  const obj = data;
+  const cleaned = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (REDACTED_FIELDS.includes(key)) {
+      cleaned[key] = "[REDACTED]";
+    } else {
+      cleaned[key] = redactSensitiveFields(value);
+    }
+  }
+  return cleaned;
+}
+var e164Pattern = /^\+[1-9]\d{1,14}$/;
 function registerAccountTools(server2, client2) {
   const id = client2.accountId;
   server2.registerTool(
@@ -21605,7 +21712,8 @@ function registerAccountTools(server2, client2) {
     },
     async () => {
       const result = await client2.get("/auth/me");
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      const safe = redactSensitiveFields(result);
+      return { content: [{ type: "text", text: JSON.stringify(safe, null, 2) }] };
     }
   );
   server2.registerTool(
@@ -21654,7 +21762,7 @@ function registerAccountTools(server2, client2) {
       title: "Purchase Phone Number",
       description: "Purchase a phone number from inventory. The number must be available (shown in list_inventory). Charges setup_fee and monthly_fee to the account.",
       inputSchema: {
-        e164: external_exports.string().describe("Phone number in E.164 format (e.g. +919876543210)"),
+        e164: external_exports.string().regex(e164Pattern, "Must be E.164 format: +<country><number>").describe("Phone number in E.164 format (e.g. +919876543210)"),
         currency: external_exports.string().optional().describe("Transaction currency (defaults to number's currency or USD)")
       }
     },
@@ -21669,11 +21777,12 @@ function registerAccountTools(server2, client2) {
       title: "Release Phone Number",
       description: "Release (unrent) a phone number back to inventory. This is permanent and irreversible.",
       inputSchema: {
-        e164_number: external_exports.string().describe("Phone number in E.164 format to release")
+        e164_number: external_exports.string().regex(e164Pattern, "Must be E.164 format: +<country><number>").describe("Phone number in E.164 format to release")
       }
     },
     async ({ e164_number }) => {
-      const result = await client2.delete(`/account/${id}/numbers/${e164_number}`);
+      const encoded = client2.safePath(e164_number, "e164_number");
+      const result = await client2.delete(`/account/${id}/numbers/${encoded}`);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -21692,7 +21801,7 @@ function registerConferenceTools(server2, client2) {
       }
     },
     async ({ conference_name }) => {
-      const encoded = encodeURIComponent(conference_name);
+      const encoded = client2.safePath(conference_name, "conference_name");
       const result = await client2.get(`/Account/${id}/Conference/${encoded}/`);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
@@ -21707,7 +21816,7 @@ function registerConferenceTools(server2, client2) {
       }
     },
     async ({ conference_name }) => {
-      const encoded = encodeURIComponent(conference_name);
+      const encoded = client2.safePath(conference_name, "conference_name");
       const result = await client2.delete(`/Account/${id}/Conference/${encoded}/`);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }

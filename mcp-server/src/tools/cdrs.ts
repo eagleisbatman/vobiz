@@ -2,6 +2,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { VobizClient } from "../client.js";
 
+/** CDR call IDs may be UUIDs or other alphanumeric identifiers */
+const safeIdPattern = /^[a-zA-Z0-9_-]+$/;
+
 export function registerCdrTools(server: McpServer, client: VobizClient) {
   const id = client.accountId;
 
@@ -38,11 +41,12 @@ export function registerCdrTools(server: McpServer, client: VobizClient) {
       title: "Get CDR",
       description: "Retrieve the Call Detail Record for a specific completed call.",
       inputSchema: {
-        call_id: z.string().describe("Call ID from the CDR"),
+        call_id: z.string().regex(safeIdPattern, "Must be alphanumeric (letters, digits, hyphens, underscores)").describe("Call ID from the CDR"),
       },
     },
     async ({ call_id }) => {
-      const result = await client.get(`/account/${id}/cdr/${call_id}`);
+      const safeId = client.safePath(call_id, "call_id");
+      const result = await client.get(`/account/${id}/cdr/${safeId}`);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -88,6 +92,33 @@ export function registerCdrTools(server: McpServer, client: VobizClient) {
       if (limit !== undefined) query.limit = String(limit);
       const result = await client.get(`/account/${id}/cdr/recent`, query);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.registerTool(
+    "vobiz_voice_export_cdrs",
+    {
+      title: "Export CDRs as CSV",
+      description:
+        "Export Call Detail Records as CSV text. Accepts the same filters as list_cdrs. Returns raw CSV content.",
+      inputSchema: {
+        from_number: z.string().optional().describe("Filter by originating phone number"),
+        to_number: z.string().optional().describe("Filter by destination phone number"),
+        start_date: z.string().optional().describe("Start date filter (YYYY-MM-DD)"),
+        end_date: z.string().optional().describe("End date filter (YYYY-MM-DD)"),
+        call_direction: z.enum(["inbound", "outbound"]).optional().describe("Filter by direction"),
+        min_duration: z.number().int().min(0).optional().describe("Minimum call duration in seconds"),
+        page: z.number().int().min(1).optional().describe("Page number (default: 1)"),
+        per_page: z.number().int().min(1).max(100).optional().describe("Items per page (default: 20)"),
+      },
+    },
+    async (args) => {
+      const query: Record<string, string> = {};
+      for (const [k, v] of Object.entries(args)) {
+        if (v !== undefined) query[k] = String(v);
+      }
+      const result = await client.get(`/account/${id}/cdr/export`, query);
+      return { content: [{ type: "text" as const, text: typeof result === "string" ? result : JSON.stringify(result, null, 2) }] };
     }
   );
 }

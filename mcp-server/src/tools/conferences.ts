@@ -16,7 +16,7 @@ export function registerConferenceTools(server: McpServer, client: VobizClient) 
       },
     },
     async ({ conference_name }) => {
-      const encoded = encodeURIComponent(conference_name);
+      const encoded = client.safePath(conference_name, "conference_name");
       const result = await client.get(`/Account/${id}/Conference/${encoded}/`);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
@@ -33,7 +33,7 @@ export function registerConferenceTools(server: McpServer, client: VobizClient) 
       },
     },
     async ({ conference_name }) => {
-      const encoded = encodeURIComponent(conference_name);
+      const encoded = client.safePath(conference_name, "conference_name");
       const result = await client.delete(`/Account/${id}/Conference/${encoded}/`);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }

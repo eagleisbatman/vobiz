@@ -1,6 +1,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { VobizClient } from "../client.js";
+import { uuidParam } from "./validation.js";
+
+/** Validate WebSocket URL scheme (wss:// or ws://) */
+const wsUrlSchema = z.string().refine(
+  (val) => val.startsWith("wss://") || val.startsWith("ws://"),
+  { message: "Must be a WebSocket URL (wss:// or ws://)" }
+);
 
 export function registerStreamTools(server: McpServer, client: VobizClient) {
   const id = client.accountId;
@@ -12,8 +19,8 @@ export function registerStreamTools(server: McpServer, client: VobizClient) {
       description:
         "Fork real-time audio from an active call to a WebSocket endpoint. Supports bidirectional streaming for AI voice agents. Billed per minute of audio forked.",
       inputSchema: {
-        call_uuid: z.string().describe("UUID of the active call"),
-        service_url: z.string().describe("WebSocket URL (wss:// or ws://) to receive audio"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the active call"),
+        service_url: wsUrlSchema.describe("WebSocket URL (wss:// or ws://) to receive audio"),
         audio_track: z
           .enum(["inbound", "outbound", "both"])
           .optional()
@@ -30,7 +37,8 @@ export function registerStreamTools(server: McpServer, client: VobizClient) {
       },
     },
     async ({ call_uuid, ...body }) => {
-      const result = await client.post(`/Account/${id}/Call/${call_uuid}/Stream/`, body);
+      const safeUuid = client.safePath(call_uuid, "call_uuid");
+      const result = await client.post(`/Account/${id}/Call/${safeUuid}/Stream/`, body);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -41,12 +49,14 @@ export function registerStreamTools(server: McpServer, client: VobizClient) {
       title: "Get Audio Stream",
       description: "Retrieve details of a specific audio stream on a call.",
       inputSchema: {
-        call_uuid: z.string().describe("UUID of the call"),
-        stream_id: z.string().describe("UUID of the audio stream"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the call"),
+        stream_id: uuidParam("stream_id").describe("UUID of the audio stream"),
       },
     },
     async ({ call_uuid, stream_id }) => {
-      const result = await client.get(`/Account/${id}/Call/${call_uuid}/Stream/${stream_id}/`);
+      const safeCallUuid = client.safePath(call_uuid, "call_uuid");
+      const safeStreamId = client.safePath(stream_id, "stream_id");
+      const result = await client.get(`/Account/${id}/Call/${safeCallUuid}/Stream/${safeStreamId}/`);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -57,16 +67,17 @@ export function registerStreamTools(server: McpServer, client: VobizClient) {
       title: "List Audio Streams",
       description: "List all audio streams on a call.",
       inputSchema: {
-        call_uuid: z.string().describe("UUID of the call"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the call"),
         limit: z.number().int().min(1).max(100).optional().describe("Results per page (default: 20)"),
         offset: z.number().int().min(0).optional().describe("Pagination offset"),
       },
     },
     async ({ call_uuid, limit, offset }) => {
+      const safeUuid = client.safePath(call_uuid, "call_uuid");
       const query: Record<string, string> = {};
       if (limit !== undefined) query.limit = String(limit);
       if (offset !== undefined) query.offset = String(offset);
-      const result = await client.get(`/Account/${id}/Call/${call_uuid}/Stream/`, query);
+      const result = await client.get(`/Account/${id}/Call/${safeUuid}/Stream/`, query);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -77,12 +88,14 @@ export function registerStreamTools(server: McpServer, client: VobizClient) {
       title: "Stop Audio Stream",
       description: "Stop a specific audio stream without affecting others on the same call.",
       inputSchema: {
-        call_uuid: z.string().describe("UUID of the call"),
-        stream_id: z.string().describe("UUID of the stream to stop"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the call"),
+        stream_id: uuidParam("stream_id").describe("UUID of the stream to stop"),
       },
     },
     async ({ call_uuid, stream_id }) => {
-      const result = await client.delete(`/Account/${id}/Call/${call_uuid}/Stream/${stream_id}/`);
+      const safeCallUuid = client.safePath(call_uuid, "call_uuid");
+      const safeStreamId = client.safePath(stream_id, "stream_id");
+      const result = await client.delete(`/Account/${id}/Call/${safeCallUuid}/Stream/${safeStreamId}/`);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -93,11 +106,12 @@ export function registerStreamTools(server: McpServer, client: VobizClient) {
       title: "Stop All Audio Streams",
       description: "Stop all active audio streams on a call. Idempotent — already-stopped streams are unaffected.",
       inputSchema: {
-        call_uuid: z.string().describe("UUID of the call"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the call"),
       },
     },
     async ({ call_uuid }) => {
-      const result = await client.delete(`/Account/${id}/Call/${call_uuid}/Stream/`);
+      const safeUuid = client.safePath(call_uuid, "call_uuid");
+      const result = await client.delete(`/Account/${id}/Call/${safeUuid}/Stream/`);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );

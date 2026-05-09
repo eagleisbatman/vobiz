@@ -1,5 +1,41 @@
 const BASE_URL = "https://api.vobiz.ai/api/v1";
 
+/**
+ * Validate and encode a path segment to prevent path traversal.
+ * Rejects values containing slashes, "..", or null bytes.
+ */
+function safePathSegment(value: string, label: string): string {
+  if (
+    value.includes("/") ||
+    value.includes("\\") ||
+    value.includes("..") ||
+    value.includes("\0")
+  ) {
+    throw new Error(`Invalid ${label}: must not contain path separators or traversal sequences`);
+  }
+  return encodeURIComponent(value);
+}
+
+/**
+ * Sanitize error response bodies to avoid leaking internal API details.
+ * Truncates to a safe length and strips potential sensitive data.
+ */
+function sanitizeErrorBody(body: string): string {
+  const maxLen = 200;
+  const truncated = body.length > maxLen ? body.slice(0, maxLen) + "..." : body;
+  return truncated.replace(/auth_secret[^,}]*/gi, "auth_secret:[REDACTED]");
+}
+
+function parseJson(body: string, method: string, path: string): unknown {
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error(
+      `${method} ${path}: expected JSON response but got non-JSON body (${body.length} bytes)`
+    );
+  }
+}
+
 export class VobizClient {
   private authId: string;
   private authToken: string;
@@ -18,6 +54,11 @@ export class VobizClient {
 
   get accountId(): string {
     return this.authId;
+  }
+
+  /** Encode a user-provided value for safe use in a URL path segment. */
+  safePath(value: string, label: string): string {
+    return safePathSegment(value, label);
   }
 
   private headers(json = false): Record<string, string> {
@@ -39,8 +80,8 @@ export class VobizClient {
     const res = await fetch(url, { headers: this.headers() });
     if (res.status === 204) return { status: 204 };
     const body = await res.text();
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${body}`);
-    return JSON.parse(body);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${sanitizeErrorBody(body)}`);
+    return parseJson(body, "GET", path);
   }
 
   async post(path: string, data?: unknown): Promise<unknown> {
@@ -51,20 +92,8 @@ export class VobizClient {
     });
     if (res.status === 204) return { status: 204 };
     const body = await res.text();
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${body}`);
-    return body ? JSON.parse(body) : { status: res.status };
-  }
-
-  async put(path: string, data?: unknown): Promise<unknown> {
-    const res = await fetch(`${BASE_URL}${path}`, {
-      method: "PUT",
-      headers: this.headers(true),
-      body: data ? JSON.stringify(data) : undefined,
-    });
-    if (res.status === 204) return { status: 204 };
-    const body = await res.text();
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${body}`);
-    return body ? JSON.parse(body) : { status: res.status };
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${sanitizeErrorBody(body)}`);
+    return body ? parseJson(body, "POST", path) : { status: res.status };
   }
 
   async delete(path: string): Promise<unknown> {
@@ -74,7 +103,7 @@ export class VobizClient {
     });
     if (res.status === 204) return { message: "deleted" };
     const body = await res.text();
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${body}`);
-    return body ? JSON.parse(body) : { status: res.status };
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${sanitizeErrorBody(body)}`);
+    return body ? parseJson(body, "DELETE", path) : { status: res.status };
   }
 }

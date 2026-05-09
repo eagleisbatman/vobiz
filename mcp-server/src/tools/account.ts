@@ -2,6 +2,27 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { VobizClient } from "../client.js";
 
+/** Fields to strip from /auth/me responses to avoid leaking secrets. */
+const REDACTED_FIELDS = ["auth_secret", "api_secret", "secret_key", "auth_token", "password", "secret", "token"];
+
+function redactSensitiveFields(data: unknown): unknown {
+  if (data === null || typeof data !== "object") return data;
+  if (Array.isArray(data)) return data.map(redactSensitiveFields);
+  const obj = data as Record<string, unknown>;
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (REDACTED_FIELDS.includes(key)) {
+      cleaned[key] = "[REDACTED]";
+    } else {
+      cleaned[key] = redactSensitiveFields(value);
+    }
+  }
+  return cleaned;
+}
+
+/** E.164 phone number: + followed by 1-15 digits */
+const e164Pattern = /^\+[1-9]\d{1,14}$/;
+
 export function registerAccountTools(server: McpServer, client: VobizClient) {
   const id = client.accountId;
 
@@ -15,7 +36,8 @@ export function registerAccountTools(server: McpServer, client: VobizClient) {
     },
     async () => {
       const result = await client.get("/auth/me");
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      const safe = redactSensitiveFields(result);
+      return { content: [{ type: "text" as const, text: JSON.stringify(safe, null, 2) }] };
     }
   );
 
@@ -70,7 +92,7 @@ export function registerAccountTools(server: McpServer, client: VobizClient) {
       description:
         "Purchase a phone number from inventory. The number must be available (shown in list_inventory). Charges setup_fee and monthly_fee to the account.",
       inputSchema: {
-        e164: z.string().describe("Phone number in E.164 format (e.g. +919876543210)"),
+        e164: z.string().regex(e164Pattern, "Must be E.164 format: +<country><number>").describe("Phone number in E.164 format (e.g. +919876543210)"),
         currency: z.string().optional().describe("Transaction currency (defaults to number's currency or USD)"),
       },
     },
@@ -87,11 +109,12 @@ export function registerAccountTools(server: McpServer, client: VobizClient) {
       description:
         "Release (unrent) a phone number back to inventory. This is permanent and irreversible.",
       inputSchema: {
-        e164_number: z.string().describe("Phone number in E.164 format to release"),
+        e164_number: z.string().regex(e164Pattern, "Must be E.164 format: +<country><number>").describe("Phone number in E.164 format to release"),
       },
     },
     async ({ e164_number }) => {
-      const result = await client.delete(`/account/${id}/numbers/${e164_number}`);
+      const encoded = client.safePath(e164_number, "e164_number");
+      const result = await client.delete(`/account/${id}/numbers/${encoded}`);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );

@@ -1,6 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { VobizClient } from "../client.js";
+import { uuidParam } from "./validation.js";
+
+/** Valid DTMF characters: digits 0-9, *, #, and w (wait) */
+const dtmfPattern = /^[0-9*#wW]+$/;
 
 export function registerAudioTools(server: McpServer, client: VobizClient) {
   const id = client.accountId;
@@ -12,7 +16,7 @@ export function registerAudioTools(server: McpServer, client: VobizClient) {
       description:
         "Play audio file(s) on an active call. Files must be accessible via HTTP/HTTPS. Multiple files play sequentially.",
       inputSchema: {
-        call_uuid: z.string().describe("UUID of the active call"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the active call"),
         urls: z.array(z.string().url()).describe("Audio file URLs (MP3, WAV)"),
         length: z.number().int().positive().optional().describe("Max playback duration in seconds"),
         legs: z.enum(["aleg", "bleg", "both"]).optional().describe("Which leg(s) hear audio (default: aleg)"),
@@ -21,7 +25,8 @@ export function registerAudioTools(server: McpServer, client: VobizClient) {
       },
     },
     async ({ call_uuid, ...body }) => {
-      const result = await client.post(`/Account/${id}/Call/${call_uuid}/Play/`, body);
+      const safeUuid = client.safePath(call_uuid, "call_uuid");
+      const result = await client.post(`/Account/${id}/Call/${safeUuid}/Play/`, body);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -32,11 +37,12 @@ export function registerAudioTools(server: McpServer, client: VobizClient) {
       title: "Stop Audio Playback",
       description: "Stop any audio currently playing on a call.",
       inputSchema: {
-        call_uuid: z.string().describe("UUID of the active call"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the active call"),
       },
     },
     async ({ call_uuid }) => {
-      const result = await client.delete(`/Account/${id}/Call/${call_uuid}/Play/`);
+      const safeUuid = client.safePath(call_uuid, "call_uuid");
+      const result = await client.delete(`/Account/${id}/Call/${safeUuid}/Play/`);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -48,9 +54,9 @@ export function registerAudioTools(server: McpServer, client: VobizClient) {
       description:
         "Convert text to speech and play it on an active call. Supports 29 languages.",
       inputSchema: {
-        call_uuid: z.string().describe("UUID of the active call"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the active call"),
         text: z.string().max(500).describe("Text to speak (max 500 chars recommended)"),
-        voice: z.enum(["WOMAN", "MAN"]).optional().describe("Voice gender (default: WOMAN)"),
+        voice: z.enum(["WOMAN", "MAN", "Polly"]).optional().describe("Voice: WOMAN, MAN, or Polly (default: WOMAN)"),
         language: z.string().optional().describe("Language code, e.g. en-US, hi-IN, es-ES (default: en-US)"),
         legs: z.enum(["aleg", "bleg", "both"]).optional().describe("Which leg(s) hear speech (default: aleg)"),
         loop: z.boolean().optional().describe("Repeat speech"),
@@ -58,7 +64,8 @@ export function registerAudioTools(server: McpServer, client: VobizClient) {
       },
     },
     async ({ call_uuid, ...body }) => {
-      const result = await client.post(`/Account/${id}/Call/${call_uuid}/Speak/`, body);
+      const safeUuid = client.safePath(call_uuid, "call_uuid");
+      const result = await client.post(`/Account/${id}/Call/${safeUuid}/Speak/`, body);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -69,11 +76,12 @@ export function registerAudioTools(server: McpServer, client: VobizClient) {
       title: "Stop Text-to-Speech",
       description: "Stop any TTS currently playing on a call.",
       inputSchema: {
-        call_uuid: z.string().describe("UUID of the active call"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the active call"),
       },
     },
     async ({ call_uuid }) => {
-      const result = await client.delete(`/Account/${id}/Call/${call_uuid}/Speak/`);
+      const safeUuid = client.safePath(call_uuid, "call_uuid");
+      const result = await client.delete(`/Account/${id}/Call/${safeUuid}/Speak/`);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -85,13 +93,14 @@ export function registerAudioTools(server: McpServer, client: VobizClient) {
       description:
         "Send DTMF tones on an active call. Useful for navigating IVR menus. Call must be active.",
       inputSchema: {
-        call_uuid: z.string().describe("UUID of the active call"),
-        digits: z.string().describe("DTMF characters: 0-9, *, #"),
+        call_uuid: uuidParam("call_uuid").describe("UUID of the active call"),
+        digits: z.string().regex(dtmfPattern, "Must contain only valid DTMF characters: 0-9, *, #, w").describe("DTMF characters: 0-9, *, #"),
         leg: z.enum(["aleg", "bleg"]).optional().describe("Target leg (default: aleg)"),
       },
     },
     async ({ call_uuid, ...body }) => {
-      const result = await client.post(`/Account/${id}/Call/${call_uuid}/DTMF/`, body);
+      const safeUuid = client.safePath(call_uuid, "call_uuid");
+      const result = await client.post(`/Account/${id}/Call/${safeUuid}/DTMF/`, body);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );

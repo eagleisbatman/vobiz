@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { VobizClient } from "../client.js";
+import { uuidParam, uuidPattern } from "./validation.js";
 
 export function registerRecordingTools(server: McpServer, client: VobizClient) {
   const id = client.accountId;
@@ -13,7 +14,7 @@ export function registerRecordingTools(server: McpServer, client: VobizClient) {
       inputSchema: {
         limit: z.number().int().min(1).max(100).optional().describe("Max per page (default: 20)"),
         offset: z.number().int().min(0).optional().describe("Pagination offset"),
-        call_uuid: z.string().optional().describe("Filter by call UUID"),
+        call_uuid: z.string().regex(uuidPattern, "Must be a valid UUID").optional().describe("Filter by call UUID"),
         recording_type: z.enum(["trunk", "extension"]).optional().describe("Filter by recording type"),
       },
     },
@@ -35,11 +36,12 @@ export function registerRecordingTools(server: McpServer, client: VobizClient) {
       description:
         "Retrieve details of a specific recording including duration, format, and download URL.",
       inputSchema: {
-        recording_id: z.string().describe("UUID of the recording"),
+        recording_id: uuidParam("recording_id").describe("UUID of the recording"),
       },
     },
     async ({ recording_id }) => {
-      const result = await client.get(`/Account/${id}/Recording/${recording_id}/`);
+      const safeId = client.safePath(recording_id, "recording_id");
+      const result = await client.get(`/Account/${id}/Recording/${safeId}/`);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -50,11 +52,12 @@ export function registerRecordingTools(server: McpServer, client: VobizClient) {
       title: "Delete Recording",
       description: "Permanently delete a recording. This is irreversible — the file and URL become inaccessible.",
       inputSchema: {
-        recording_id: z.string().describe("UUID of the recording to delete"),
+        recording_id: uuidParam("recording_id").describe("UUID of the recording to delete"),
       },
     },
     async ({ recording_id }) => {
-      const result = await client.delete(`/Account/${id}/Recording/${recording_id}/`);
+      const safeId = client.safePath(recording_id, "recording_id");
+      const result = await client.delete(`/Account/${id}/Recording/${safeId}/`);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
