@@ -1,35 +1,64 @@
 # Vobiz — Claude Code Plugin
 
-Claude Code plugin for the [Vobiz](https://www.vobiz.ai/) voice/telephony platform. Includes an MCP server (31 tools) for managing calls, audio, streams, and recordings, plus provisioning skills for setting up trunks, credentials, and endpoints.
+Build AI voice agents faster. This plugin gives [Claude Code](https://claude.ai/code) full access to the [Vobiz](https://www.vobiz.ai/) voice/telephony platform — make calls, stream audio to AI models, manage recordings, and provision SIP infrastructure, all from your coding assistant.
+
+## What you get
+
+- **31 MCP tools** — make/transfer/hangup calls, play audio, stream to WebSockets, manage recordings, browse CDRs, purchase phone numbers
+- **7 slash commands** — set up SIP trunks, credentials, endpoints, applications, and origination URIs without leaving Claude Code
+- **Zero dependencies** — the MCP server is bundled into a single file, nothing to install beyond the plugin itself
 
 ## Install
 
-### From the marketplace (recommended)
+### 1. Get a Vobiz account
 
-In Claude Code, add the marketplace and install:
+Sign up at [vobiz.ai](https://www.vobiz.ai/) and grab your **Auth ID** and **Auth Token** from the dashboard.
 
-```bash
-claude plugin marketplace add eagleisbatman/vobiz
-```
+### 2. Set your credentials
 
-```
-/plugin install vobiz
-```
-
-That's it — 31 MCP tools + 7 slash commands, ready to use.
-
-### Authentication
-
-Set these environment variables before launching Claude Code:
+Add to your `~/.zshrc` (or `~/.bashrc`):
 
 ```bash
 export VOBIZ_AUTH_ID="your-auth-id"
 export VOBIZ_AUTH_TOKEN="your-auth-token"
 ```
 
-Get credentials from your [Vobiz dashboard](https://www.vobiz.ai/).
+Restart your terminal or run `source ~/.zshrc`.
 
-## MCP Tools (31)
+### 3. Install the plugin
+
+In Claude Code:
+
+```
+claude plugin marketplace add eagleisbatman/vobiz
+```
+
+Then:
+
+```
+/plugin install vobiz
+```
+
+Done. You now have all 31 tools and 7 commands available.
+
+## Usage examples
+
+**"Make a test call to my phone"**
+> Claude uses `vobiz_voice_make_call` with your number and an answer URL
+
+**"Set up a new SIP trunk for my LiveKit agent"**
+> Run `/vobiz-setup-full` — walks through trunk, credentials, origination URI, and app creation
+
+**"Stream this call's audio to my AI agent via WebSocket"**
+> Claude uses `vobiz_voice_start_stream` with your `wss://` endpoint
+
+**"Show me today's call history"**
+> Claude uses `vobiz_voice_list_cdrs` or `vobiz_voice_recent_cdrs`
+
+**"Help me write the Voice XML for an IVR menu"**
+> Run `/vobiz-voicexml` — provides the full XML reference and builds the response with you
+
+## Tools reference
 
 ### Calls
 | Tool | Description |
@@ -90,37 +119,25 @@ Get credentials from your [Vobiz dashboard](https://www.vobiz.ai/).
 | `vobiz_voice_purchase_number` | Purchase a number |
 | `vobiz_voice_release_number` | Release a number |
 
-## Slash Commands
+## Slash commands
 
-| Command | Description |
+| Command | What it does |
 |---------|-------------|
-| `/vobiz-setup-full` | Full end-to-end provisioning (trunk, credentials, URI, app, number) |
-| `/vobiz-setup-trunk` | Create/manage SIP trunks |
-| `/vobiz-setup-credentials` | Create/manage trunk credentials |
-| `/vobiz-setup-app` | Create/manage applications |
-| `/vobiz-setup-endpoint` | Create/manage SIP endpoints |
-| `/vobiz-setup-origination-uri` | Create/manage origination URIs |
-| `/vobiz-voicexml` | Voice XML reference and builder |
+| `/vobiz-setup-full` | Full provisioning — trunk, credentials, origination URI, app, phone number |
+| `/vobiz-setup-trunk` | Create or manage SIP trunks |
+| `/vobiz-setup-credentials` | Create or manage trunk credentials |
+| `/vobiz-setup-app` | Create or manage voice applications |
+| `/vobiz-setup-endpoint` | Create or manage SIP endpoints (WebRTC, softphones) |
+| `/vobiz-setup-origination-uri` | Create or manage origination URIs (SIP routing) |
+| `/vobiz-voicexml` | Voice XML reference — build webhook responses for call flow control |
 
-## Project Structure
-
-```
-.claude-plugin/
-  plugin.json        # Plugin manifest
-commands/            # Slash commands (provisioning skills)
-mcp-server/
-  src/               # TypeScript source
-  dist/bundle.cjs    # Bundled server (zero dependencies)
-raw/                 # Source API documentation (reference)
-```
-
-## Development
+## Contributing
 
 ```bash
 cd mcp-server
 npm install
-npm run build        # TypeScript compile + esbuild bundle
-npm start            # Run the bundled server
+npm run build     # compiles TypeScript + bundles with esbuild
+npm start         # runs the bundled MCP server
 ```
 
 ## License
