@@ -4,40 +4,19 @@ Claude Code plugin for the [Vobiz](https://www.vobiz.ai/) voice/telephony platfo
 
 ## Install
 
-### As a Claude Code plugin (recommended)
+### From the marketplace (recommended)
+
+In Claude Code, add the marketplace and install:
 
 ```bash
-git clone https://github.com/eagleisbatman/vobiz.git ~/.claude/plugins/vobiz
+claude plugin marketplace add eagleisbatman/vobiz
 ```
 
-Then in Claude Code:
-
 ```
-/plugin enable vobiz
+/plugin install vobiz
 ```
 
-This gives you all 31 MCP tools + 7 slash commands automatically.
-
-### As a standalone MCP server
-
-Add to your project's `.mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "vobiz-voice": {
-      "command": "node",
-      "args": ["/path/to/vobiz/mcp-server/dist/bundle.cjs"]
-    }
-  }
-}
-```
-
-Or register globally:
-
-```bash
-claude mcp add vobiz-voice -- node /path/to/vobiz/mcp-server/dist/bundle.cjs
-```
+That's it — 31 MCP tools + 7 slash commands, ready to use.
 
 ### Authentication
 
